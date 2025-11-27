@@ -2,15 +2,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateFilledDocx, DocxFormInput } from "@/lib/docxTemplate";
 import { uploadFileToDrive } from "@/lib/googleDrive";
-
+import { generatePreviewPdfFromDocxInput } from "@/lib/pdfTemplate"; // <-- THÊM
 export const runtime = "nodejs";
 
 type ApiResponse =
   | {
       success: true;
-      fileId: string;
-      fileName: string;
-      webViewLink?: string;
+      docx: {
+        fileId: string;
+        fileName: string;
+        webViewLink?: string;
+      };
+      pdf: {
+        fileId: string;
+        fileName: string;
+        webViewLink?: string;
+      };
     }
   | {
       success: false;
@@ -20,12 +27,14 @@ type ApiResponse =
 function getTimestampString(): string {
   const now = new Date();
   const pad = (n: number) => `${n}`.padStart(2, "0");
+
   const year = now.getFullYear();
   const month = pad(now.getMonth() + 1);
   const day = pad(now.getDate());
   const hour = pad(now.getHours());
   const minute = pad(now.getMinutes());
   const second = pad(now.getSeconds());
+
   // ddMMyyyy_HHmmss
   return `${day}${month}${year}_${hour}${minute}${second}`;
 }
@@ -53,19 +62,20 @@ function removeVietnameseTones(str: string): string {
  * Chuyển '2025-11-27' -> '27/11/2025'
  * Nếu value trống hoặc không đúng format thì trả về chuỗi cũ.
  */
-function formatISOToDMY(iso?: string | null): string {
+export function formatISOToDMY(iso?: string | null): string {
   if (!iso) return "";
-  const parts = iso.split("-");
-  if (parts.length !== 3) return iso;
-  const [year, month, day] = parts;
-  if (!year || !month || !day) return iso;
-  return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+
+  // Bắt 3 nhóm đầu tiên (YYYY-MM-DD)
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return iso;
+
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
 }
 
 // Hỗ trợ cả JSON (fetch) lẫn form-data (HTML form submit)
 async function parseBody(req: NextRequest): Promise<Partial<DocxFormInput>> {
   const contentType = req.headers.get("content-type") || "";
-
   if (contentType.includes("application/json")) {
     // Trường hợp dùng fetch(...) với body JSON
     return (await req.json()) as Partial<DocxFormInput>;
@@ -88,58 +98,84 @@ export async function POST(
   try {
     const body = await parseBody(req);
 
-    // Validate cơ bản – có thể nới rộng thêm vì frontend đang bắt tất cả field
-    if (!body.fullName || !body.className || !body.phone || !body.email) {
+    // ✅ CHỈ BẮT BUỘC: fullName, phone, email
+    //    className KHÔNG bắt buộc nữa
+    if (!body.fullName || !body.phone || !body.email) {
       return NextResponse.json(
         {
           success: false,
-          error: "Thiếu thông tin bắt buộc (họ tên, lớp, SĐT, email).",
+          error: "Thiếu thông tin bắt buộc (họ tên, SĐT, email).",
         },
         { status: 400 }
       );
     }
 
-    // ⭐ Convert ngày từ yyyy-mm-dd -> dd/mm/yyyy để đổ vào DOCX
+    // ⭐ Convert ngày từ yyyy-mm-dd -> dd/mm/yyyy để đổ vào DOCX/PDF
     const birthDateDMY = formatISOToDMY(body.birthDate || "");
     const idDateDMY = formatISOToDMY(body.idDate || "");
 
     const input: DocxFormInput = {
       fullName: body.fullName,
-      birthDate: birthDateDMY,       // <-- 27/11/2025
+      birthDate: birthDateDMY, // <-- 27/11/2025
       nationality: body.nationality || "",
       hometown: body.hometown || "",
-      className: body.className,
+      className: body.className || "", // có thể rỗng
       studentCode: body.studentCode || "",
       address: body.address || "",
       phone: body.phone,
       email: body.email,
       idNumber: body.idNumber || "",
-      idDate: idDateDMY,             // <-- 27/11/2025
+      idDate: idDateDMY, // <-- 27/11/2025
       idPlace: body.idPlace || "",
     };
 
     // 1) Tạo DOCX từ template.docx
     const filledDocx = await generateFilledDocx(input);
 
-    // 2) Đặt tên file
-    const safeName = removeVietnameseTones(input.fullName);
-    const safeClass = sanitizeForFilename(input.className);
-    const timestamp = getTimestampString();
-    const fileName = `${safeName}_${safeClass}_${timestamp}.docx`;
+    // 2) Tạo PDF từ cùng input (dùng chung logic với preview)
+    const pdfBytes = await generatePreviewPdfFromDocxInput(input);
+    // đảm bảo kiểu Buffer cho google drive
+    const filledPdf = Buffer.isBuffer(pdfBytes)
+      ? pdfBytes
+      : Buffer.from(pdfBytes);
 
-    // 3) Upload lên Google Drive
-    const result = await uploadFileToDrive(
+    // 3) Đặt base-name dùng chung cho cả DOCX và PDF
+    const safeName = removeVietnameseTones(input.fullName);
+    const safeId = sanitizeForFilename(input.idNumber || "NoId");
+    const timestamp = getTimestampString();
+    const baseName = `${safeName}_${safeId}_${timestamp}`;
+
+    const docxFileName = `${baseName}.docx`;
+    const pdfFileName = `${baseName}.pdf`;
+
+    // 4) Upload DOCX lên Google Drive
+    const docxResult = await uploadFileToDrive(
       filledDocx,
-      fileName,
+      docxFileName,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
 
+    // 5) Upload PDF lên Google Drive
+    const pdfResult = await uploadFileToDrive(
+      filledPdf,
+      pdfFileName,
+      "application/pdf"
+    );
+
+    // 6) Trả về cả 2 file
     return NextResponse.json(
       {
         success: true,
-        fileId: result.fileId,
-        fileName: result.fileName,
-        webViewLink: result.webViewLink,
+        docx: {
+          fileId: docxResult.fileId,
+          fileName: docxResult.fileName,
+          webViewLink: docxResult.webViewLink,
+        },
+        pdf: {
+          fileId: pdfResult.fileId,
+          fileName: pdfResult.fileName,
+          webViewLink: pdfResult.webViewLink,
+        },
       },
       { status: 200 }
     );
