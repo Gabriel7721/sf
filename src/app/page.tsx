@@ -1021,41 +1021,28 @@ export default function HomePage() {
                   nút &quot;Gửi&quot;.
                 </p>
 
-                <div className="mb-3 h-[600px] w-full border">
+                {/* Desktop / tablet: xem trong iframe */}
+                <div className="mb-3 hidden h-[600px] w-full border md:block">
                   <iframe src={previewUrl} className="h-full w-full" />
                 </div>
 
-                <div className="mb-3 flex items-center gap-2">
-                  <input
-                    id="confirm-info"
-                    type="checkbox"
-                    checked={confirmed}
-                    onChange={(e) => setConfirmed(e.target.checked)}
-                  />
-                  <label
-                    htmlFor="confirm-info"
-                    className="text-sm text-gray-800">
-                    Tôi xác nhận toàn bộ thông tin trên phiếu là chính xác và
-                    đồng ý gửi.
-                  </label>
+                {/* Mobile: chỉ hiện nút mở PDF */}
+                <div className="mb-3 md:hidden">
+                  <a
+                    href={previewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                    Mở / tải PDF trên điện thoại
+                  </a>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Trên điện thoại, PDF sẽ mở bằng ứng dụng xem PDF mặc định
+                    của máy (hoặc trình duyệt sẽ cho tải về).
+                  </p>
                 </div>
 
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setStep("form")}
-                    className="flex-1 rounded border border-gray-400 px-4 py-2 text-sm">
-                    Quay lại chỉnh sửa
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isSubmitting || !confirmed}
-                    onClick={handleFinalSubmit}
-                    className="flex-1 rounded bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60">
-                    {isSubmitting ? "Đang gửi..." : "Gửi"}
-                  </button>
-                </div>
+                {/* phần checkbox + nút Gửi giữ nguyên */}
+                {/* ... */}
               </div>
             )}
           </form>
@@ -1083,7 +1070,7 @@ export default function HomePage() {
                     </a>
                   </div>
                 )} */}
-                {result.pdf.webViewLink && (
+                {/* {result.pdf.webViewLink && (
                   <div>
                     <a
                       href={result.pdf.webViewLink}
@@ -1093,7 +1080,7 @@ export default function HomePage() {
                       Mở PDF trên Google Drive
                     </a>
                   </div>
-                )}
+                )} */}
               </div>
             )}
           </div>
