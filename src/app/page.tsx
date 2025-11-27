@@ -1099,7 +1099,7 @@ export default function HomePage() {
                     </a>
                   </div>
                 )} */}
-                {result.pdf.webViewLink && (
+                {/* {result.pdf.webViewLink && (
                   <div>
                     <a
                       href={result.pdf.webViewLink}
@@ -1109,7 +1109,7 @@ export default function HomePage() {
                       Mở PDF trên Google Drive
                     </a>
                   </div>
-                )}
+                )} */}
               </div>
             )}
           </div>
